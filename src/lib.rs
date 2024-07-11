@@ -1,5 +1,7 @@
-pub mod params;
-pub mod render;
+mod island;
+mod params;
+mod render;
 
-pub use params::{ParamsProcessor, CombinedParamsProcessor};
-pub use render::{SsrRenderer, get_or_init_renderer};
+pub use island::{Island, IslandManager, IslandManifest};
+pub use params::{CombinedParamsProcessor, ParamsProcessor};
+pub use render::{init_renderer, IslandRenderer, SsrRenderer};
