@@ -9,7 +9,7 @@ pub type IslandRenderer = dyn Fn(&str, &Value) -> Result<String, String> + Send 
 pub struct Island {
     pub id: Cow<'static, str>,
     pub version: u64,
-    pub meta: Option<Value>, // 用于存储默认属性
+    pub meta: Option<Value>,
 }
 
 pub struct IslandManifest {
@@ -60,9 +60,37 @@ impl IslandManifest {
     }
 }
 
-impl Default for IslandManifest {
-    fn default() -> Self {
-        Self::new()
+pub trait IslandProcessor: Send + Sync {
+    fn process(&self, island_manager: &Arc<IslandManager>) -> Value;
+}
+
+pub struct CombinedIslandProcessor {
+    processors: Vec<Box<dyn IslandProcessor>>,
+}
+
+impl CombinedIslandProcessor {
+    pub fn new() -> Self {
+        Self {
+            processors: Vec::new(),
+        }
+    }
+
+    pub fn add<P: IslandProcessor + 'static>(mut self, processor: P) -> Self {
+        self.processors.push(Box::new(processor));
+        self
+    }
+}
+
+impl IslandProcessor for CombinedIslandProcessor {
+    fn process(&self, island_manager: &Arc<IslandManager>) -> Value {
+        let mut result = serde_json::Map::new();
+        for processor in &self.processors {
+            let processed = processor.process(island_manager);
+            if let Value::Object(map) = processed {
+                result.extend(map);
+            }
+        }
+        Value::Object(result)
     }
 }
 
@@ -108,22 +136,19 @@ impl IslandManager {
             .get(id)
             .ok_or_else(|| format!("Renderer for island '{}' not found", id))?;
     
-        let instance_id = nanoid!(10); // 生成10位的nanoid
+        let instance_id = nanoid!(10);
         
-        // 合并默认属性和实例特定属性
         let mut merged_props = serde_json::json!({
             "islandId": id,
             "version": island.version,
             "instanceId": instance_id
         });
         if let Some(obj) = merged_props.as_object_mut() {
-            // 添加岛屿的默认属性
             if let Some(default_props) = &island.meta {
                 for (key, value) in default_props.as_object().unwrap() {
                     obj.insert(key.clone(), value.clone());
                 }
             }
-            // 用实例特定属性覆盖
             for (key, value) in instance_props.as_object().unwrap() {
                 obj.insert(key.clone(), value.clone());
             }
@@ -138,10 +163,17 @@ impl IslandManager {
             .map_err(|e| e.to_string())
             .map(|guard| guard.to_json())
     }
+
+    pub fn process_islands(&self, processor: &dyn IslandProcessor) -> Value {
+        processor.process(&Arc::new(self.clone()))
+    }
 }
 
-impl Default for IslandManager {
-    fn default() -> Self {
-        Self::new()
+impl Clone for IslandManager {
+    fn clone(&self) -> Self {
+        Self {
+            manifest: self.manifest.clone(),
+            renderers: self.renderers.clone(),
+        }
     }
 }

@@ -29,11 +29,11 @@ impl Template {
             )
             .replace("%ssrkit.body%", static_html);
 
-        // Replace Island placeholders
+        // Replace Island placeholders with custom rendered content
         if let Some(island_instances) = islands.as_object() {
-            for (id, instance) in island_instances {
-                if let Some(html) = instance["html"].as_str() {
-                    let placeholder = format!(r#"<div data-island="{}">"#, id);
+            for (name, instance) in island_instances {
+                if let (Some(id), Some(html)) = (instance["id"].as_str(), instance["html"].as_str()) {
+                    let placeholder = format!(r#"<div data-island="{}" data-name="{}"></div>"#, id, name);
                     rendered_html = rendered_html.replace(&placeholder, html);
                 }
             }
