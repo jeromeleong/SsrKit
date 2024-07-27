@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub trait ParamsProcessor: Send + Sync + 'static {
+pub trait ParamsProcessor: Send + Sync {
     fn process(
         &self,
         path: &str,
