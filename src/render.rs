@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use regex::Regex;
 
 pub struct SsrRenderer {
     params_processor: Box<dyn ParamsProcessor>,
@@ -29,7 +30,6 @@ impl SsrRenderer {
         &self,
         path: &str,
         params: HashMap<String, String>,
-        island_ids: Option<Vec<&str>>,
         render_fn: F,
     ) -> Result<String, String>
     where
@@ -37,34 +37,49 @@ impl SsrRenderer {
     {
         let processed_params = self.params_processor.process(path, &params);
 
-        let islands_json = if let Some(ids) = island_ids {
-            let mut island_map = serde_json::Map::new();
-            for id in ids {
-                match self.island_manager.render_island(id, &Value::Null) {
-                    Ok(rendered) => {
-                        island_map.insert(id.to_string(), Value::String(rendered));
-                    }
-                    Err(e) => {
-                        return Err(format!("Failed to render island '{}': {}", id, e));
-                    }
-                }
-            }
-            Value::Object(island_map)
-        } else {
-            Value::Object(serde_json::Map::new())
-        };
-
         let props = serde_json::json!({
             "url": path,
             "params": processed_params,
-            "islands": islands_json,
         });
 
         let content = render_fn(&props.to_string())?;
-        let rendered = serde_json::from_str::<Value>(&content)
+        let mut rendered = serde_json::from_str::<Value>(&content)
             .map_err(|e| format!("Failed to parse render result: {}", e))?;
 
+        // 替换所有 Island 占位符并收集使用的 island IDs
+        let mut used_islands = Vec::new();
+        if let Some(html) = rendered["html"].as_str() {
+            let (replaced_html, islands) = self.replace_island_placeholders(html)?;
+            rendered["html"] = Value::String(replaced_html);
+            used_islands = islands;
+        }
+
+        // 创建 islands 对象
+        let islands_json = serde_json::json!({
+            "islands": used_islands.into_iter().map(|id| (id, Value::Null)).collect::<serde_json::Map<String, Value>>()
+        });
+
         self.template.render(&rendered, &islands_json)
+    }
+
+    fn replace_island_placeholders(&self, html: &str) -> Result<(String, Vec<String>), String> {
+        let re = Regex::new(r#"<div data-island="([^"]+)"(?: data-props='([^']*)')?></div>"#).unwrap();
+        let mut result = html.to_string();
+        let mut used_islands = Vec::new();
+
+        for cap in re.captures_iter(html) {
+            let island_id = &cap[1];
+            let props_str = cap.get(2).map_or("{}", |m| m.as_str());
+            
+            let props: Value = serde_json::from_str(props_str)
+                .unwrap_or_else(|_| serde_json::json!({}));
+
+            let rendered_island = self.island_manager.render_island(island_id, &props)?;
+            result = result.replace(&cap[0], &rendered_island);
+            used_islands.push(island_id.to_string());
+        }
+
+        Ok((result, used_islands))
     }
 }
 

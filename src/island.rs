@@ -1,3 +1,4 @@
+use nanoid::nanoid;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -7,9 +8,8 @@ pub type IslandRenderer = dyn Fn(&str, &Value) -> Result<String, String> + Send 
 
 pub struct Island {
     pub id: Cow<'static, str>,
-    pub content: Cow<'static, str>,
     pub version: u64,
-    pub meta: Option<Value>,
+    pub meta: Option<Value>, // 用于存储默认属性
 }
 
 pub struct IslandManifest {
@@ -26,41 +26,19 @@ impl IslandManifest {
     pub fn add(
         &mut self,
         id: impl Into<Cow<'static, str>>,
-        content: impl Into<Cow<'static, str>>,
+        default_props: Option<Value>,
     ) -> &mut Island {
         let id = id.into();
-        let content = content.into();
         let version = self.islands.get(&id).map_or(1, |island| island.version + 1);
         self.islands.entry(id.clone()).or_insert_with(|| Island {
             id,
-            content,
             version,
-            meta: None,
+            meta: default_props,
         })
     }
 
     pub fn get(&self, id: &str) -> Option<&Island> {
         self.islands.get(id)
-    }
-
-    pub fn update(
-        &mut self,
-        id: &str,
-        content: impl Into<Cow<'static, str>>,
-    ) -> Option<&mut Island> {
-        self.islands.get_mut(id).map(|island| {
-            island.content = content.into();
-            island.version += 1;
-            island
-        })
-    }
-
-    pub fn remove(&mut self, id: &str) -> Option<Island> {
-        self.islands.remove(id)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Island> {
-        self.islands.values()
     }
 
     pub fn to_json(&self) -> Value {
@@ -72,7 +50,6 @@ impl IslandManifest {
                         id.to_string(),
                         serde_json::json!({
                             "id": island.id,
-                            "content": island.content,
                             "version": island.version,
                             "meta": island.meta,
                         }),
@@ -113,43 +90,46 @@ impl IslandManager {
     pub fn add_island(
         &self,
         id: impl Into<Cow<'static, str>>,
-        content: impl Into<Cow<'static, str>>,
+        default_props: Option<Value>,
     ) -> Result<(), String> {
         let mut manifest = self.manifest.lock().map_err(|e| e.to_string())?;
-        manifest.add(id, content);
+        manifest.add(id, default_props);
         Ok(())
     }
 
-    pub fn render_island(&self, id: &str, props: &Value) -> Result<String, String> {
+    pub fn render_island(&self, id: &str, instance_props: &Value) -> Result<String, String> {
         let manifest = self.manifest.lock().map_err(|e| e.to_string())?;
         let renderers = self.renderers.lock().unwrap();
-
+    
         let island = manifest
             .get(id)
             .ok_or_else(|| format!("Island '{}' not found in manifest", id))?;
         let renderer = renderers
             .get(id)
             .ok_or_else(|| format!("Renderer for island '{}' not found", id))?;
-
-        let mut island_props = props.clone();
-        if let Some(obj) = island_props.as_object_mut() {
-            obj.insert("islandId".to_string(), Value::String(id.to_string()));
-            obj.insert("version".to_string(), Value::Number(island.version.into()));
+    
+        let instance_id = nanoid!(10); // 生成10位的nanoid
+        
+        // 合并默认属性和实例特定属性
+        let mut merged_props = serde_json::json!({
+            "islandId": id,
+            "version": island.version,
+            "instanceId": instance_id
+        });
+        if let Some(obj) = merged_props.as_object_mut() {
+            // 添加岛屿的默认属性
+            if let Some(default_props) = &island.meta {
+                for (key, value) in default_props.as_object().unwrap() {
+                    obj.insert(key.clone(), value.clone());
+                }
+            }
+            // 用实例特定属性覆盖
+            for (key, value) in instance_props.as_object().unwrap() {
+                obj.insert(key.clone(), value.clone());
+            }
         }
-
-        renderer(id, &island_props)
-    }
-
-    pub fn update_island(
-        &self,
-        id: &str,
-        content: impl Into<Cow<'static, str>>,
-    ) -> Result<(), String> {
-        let mut manifest = self.manifest.lock().map_err(|e| e.to_string())?;
-        manifest
-            .update(id, content)
-            .ok_or_else(|| format!("Island '{}' not found", id))?;
-        Ok(())
+    
+        renderer(id, &merged_props)
     }
 
     pub fn get_manifest_json(&self) -> Result<Value, String> {
