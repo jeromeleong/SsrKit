@@ -1,11 +1,11 @@
 use crate::island::IslandManager;
 use crate::params::ParamsProcessor;
 use crate::template::Template;
+use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use regex::Regex;
 
 pub struct SsrRenderer {
     params_processor: Box<dyn ParamsProcessor>,
@@ -63,16 +63,17 @@ impl SsrRenderer {
     }
 
     fn replace_island_placeholders(&self, html: &str) -> Result<(String, Vec<String>), String> {
-        let re = Regex::new(r#"<div data-island="([^"]+)"(?: data-props='([^']*)')?></div>"#).unwrap();
+        let re =
+            Regex::new(r#"<div data-island="([^"]+)"(?: data-props='([^']*)')?></div>"#).unwrap();
         let mut result = html.to_string();
         let mut used_islands = Vec::new();
 
         for cap in re.captures_iter(html) {
             let island_id = &cap[1];
             let props_str = cap.get(2).map_or("{}", |m| m.as_str());
-            
-            let props: Value = serde_json::from_str(props_str)
-                .unwrap_or_else(|_| serde_json::json!({}));
+
+            let props: Value =
+                serde_json::from_str(props_str).unwrap_or_else(|_| serde_json::json!({}));
 
             let rendered_island = self.island_manager.render_island(island_id, &props)?;
             result = result.replace(&cap[0], &rendered_island);

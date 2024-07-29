@@ -4,7 +4,7 @@ pub mod render;
 pub mod template;
 
 // Re-export main types and traits
-pub use island::{IslandManager,IslandProcessor,CombinedIslandProcessor};
+pub use island::{CombinedIslandProcessor, IslandManager, IslandProcessor};
 pub use params::{CombinedParamsProcessor, ParamsProcessor};
 pub use render::{init_renderer, SsrRenderer};
 pub use template::Template;
@@ -14,7 +14,7 @@ pub use serde_json::{Map, Value};
 
 // You might want to add a prelude module for convenient imports
 pub mod prelude {
-    pub use crate::island::{IslandManager,IslandProcessor,CombinedIslandProcessor};
+    pub use crate::island::{CombinedIslandProcessor, IslandManager, IslandProcessor, ProcessContext};
     pub use crate::params::{CombinedParamsProcessor, ParamsProcessor};
     pub use crate::render::{init_renderer, SsrRenderer};
     pub use crate::template::Template;

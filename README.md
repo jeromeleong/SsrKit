@@ -30,6 +30,8 @@ ssrkit = { git = "https://git.leongfamily.net/jerome/ssrkit.git" }
 use ssrkit::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
+use ssrkit::create_ssr_renderer;
+use chrono::Duration;
 
 struct BasicParamsProcessor;
 impl ParamsProcessor for BasicParamsProcessor {
@@ -39,7 +41,7 @@ impl ParamsProcessor for BasicParamsProcessor {
 }
 
 fn main() {
-    // 初始化模板
+    // Initialize template
     let template = Arc::new(Template::new(r#"
         <!DOCTYPE html>
         <html>
@@ -53,10 +55,10 @@ fn main() {
         </html>
     "#));
     
-    // 初始化 Island 管理器
+    // Initialize Island manager
     let island_manager = Arc::new(IslandManager::new());
     
-    // 註冊一個簡單的 Island 組件
+    // Register the Counter island
     island_manager.register("Counter", |_, props| {
         let initial_count = props["initialCount"].as_i64().unwrap_or(0);
         Ok(format!(
@@ -69,31 +71,86 @@ fn main() {
         ))
     });
     
-    // 創建 SSR 渲染器
+    // Add the Counter island to the manifest
+    island_manager.add_island("Counter", Some(serde_json::json!({"initialCount": 0}))).unwrap();
+    
+    // Initial global state
+    let initial_state = serde_json::json!({
+        "user": null,
+        "theme": "light",
+    });
+
+    // Create SSR renderer
     let renderer = create_ssr_renderer(
         || CombinedParamsProcessor::new().add("/", BasicParamsProcessor),
-        island_manager,
+        island_manager.clone(),
         template,
+        initial_state,
     );
 
-    // 模擬請求
+    // Simulate request
     let path = "/example";
     let mut params = HashMap::new();
     params.insert("user".to_string(), "Alice".to_string());
     
-    // 執行渲染
-    let result = renderer.render(&path, params, |props| {
-        // 這裡可以調用前端的 SSR 函數
-        let user = serde_json::from_str::<serde_json::Value>(props).unwrap()["params"]["user"].as_str().unwrap_or("Guest");
-        let content = format!("Welcome, {}! Here's a counter for you:", user);
-        Ok(serde_json::json!({
-            "html": format!("<h1>{}</h1><div data-island=\"Counter\" data-props='{{}}'></div>", content),
-            "css": ".counter { font-weight: bold; }",
-            "head": "<meta name='description' content='SSR Example with Counter'>"
-        }).to_string())
-    });
+    // Simulate headers
+    let mut headers = HashMap::new();
+    headers.insert("X-User-Id".to_string(), "12345".to_string());
+    headers.insert("Accept-Language".to_string(), "en-US".to_string());
 
-    println!("Rendered HTML: {}", result.unwrap());
+    // Execute rendering
+    let result = renderer.render(
+        &path, 
+        params, 
+        &headers,
+        Some(|state: &mut GlobalState| {
+            // Initialize state based on request information
+            if let Some(user_id) = headers.get("X-User-Id") {
+                state.update(|s| {
+                    s["user"] = serde_json::json!({"id": user_id});
+                });
+                // Set user ID cookie
+                let mut cookie = Cookie::new("user_id".to_string(), user_id.to_string());
+                cookie.http_only = true;
+                cookie.max_age = Some(Duration::days(30));
+                state.cookie_manager().add(cookie);
+            }
+            // Set language preference
+            if let Some(lang) = headers.get("Accept-Language") {
+                state.update(|s| {
+                    s["lang"] = serde_json::json!(lang);
+                });
+            }
+        }),
+        |props, state| {
+            let parsed_props: serde_json::Value = serde_json::from_str(props).unwrap();
+            let user = parsed_props["params"]["user"].as_str().unwrap_or("Guest");
+            let user_id = state.get()["user"]["id"].as_str().unwrap_or("Unknown");
+            let lang = state.get()["lang"].as_str().unwrap_or("en-US");
+            let content = format!("Welcome, {} (ID: {})! Your language is {}. Here's a counter for you:", user, user_id, lang);
+            
+            Ok(serde_json::json!({
+                "html": format!(
+                    r#"<h1>{}</h1><div data-island="Counter" data-props='{{"initialCount": 0}}'></div>"#,
+                    content
+                ),
+                "css": ".counter { font-weight: bold; }",
+                "head": "<meta name='description' content='SSR Example with Counter'>"
+            }).to_string())
+        }
+    );
+
+    match result {
+        Ok((html, final_state, cookies)) => {
+            println!("Rendered HTML: {}", html);
+            println!("Final state: {}", serde_json::to_string_pretty(&final_state).unwrap());
+            println!("Set-Cookie headers:");
+            for cookie in cookies {
+                println!("  {}", cookie);
+            }
+        },
+        Err(e) => println!("Rendering error: {}", e),
+    }
 }
 ```
 

@@ -60,8 +60,13 @@ impl IslandManifest {
     }
 }
 
+pub struct ProcessContext {
+    pub path: String,
+    // 可以根据需要添加更多字段
+}
+
 pub trait IslandProcessor: Send + Sync {
-    fn process(&self, island_manager: &Arc<IslandManager>) -> Value;
+    fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value;
 }
 
 pub struct CombinedIslandProcessor {
@@ -82,10 +87,10 @@ impl CombinedIslandProcessor {
 }
 
 impl IslandProcessor for CombinedIslandProcessor {
-    fn process(&self, island_manager: &Arc<IslandManager>) -> Value {
+    fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value {
         let mut result = serde_json::Map::new();
         for processor in &self.processors {
-            let processed = processor.process(island_manager);
+            let processed = processor.process(island_manager, context);
             if let Value::Object(map) = processed {
                 result.extend(map);
             }
@@ -128,16 +133,13 @@ impl IslandManager {
     pub fn render_island(&self, id: &str, instance_props: &Value) -> Result<String, String> {
         let manifest = self.manifest.lock().map_err(|e| e.to_string())?;
         let renderers = self.renderers.lock().unwrap();
-    
         let island = manifest
             .get(id)
             .ok_or_else(|| format!("Island '{}' not found in manifest", id))?;
         let renderer = renderers
             .get(id)
             .ok_or_else(|| format!("Renderer for island '{}' not found", id))?;
-    
         let instance_id = nanoid!(10);
-        
         let mut merged_props = serde_json::json!({
             "islandId": id,
             "version": island.version,
@@ -153,7 +155,6 @@ impl IslandManager {
                 obj.insert(key.clone(), value.clone());
             }
         }
-    
         renderer(id, &merged_props)
     }
 
@@ -164,8 +165,12 @@ impl IslandManager {
             .map(|guard| guard.to_json())
     }
 
-    pub fn process_islands(&self, processor: &dyn IslandProcessor) -> Value {
-        processor.process(&Arc::new(self.clone()))
+    pub fn process_islands(
+        &self,
+        processor: &dyn IslandProcessor,
+        context: &ProcessContext,
+    ) -> Value {
+        processor.process(&Arc::new(self.clone()), context)
     }
 }
 
