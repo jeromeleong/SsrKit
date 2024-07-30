@@ -1,7 +1,7 @@
 use crate::island::{init_island_cache, IslandManager, IslandProcessor, ProcessContext};
 use crate::params::ParamsProcessor;
 use crate::template::{init_template_cache, Template};
-use crate::SsrkitConfig;
+use crate::{cache, SsrkitConfig};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -61,7 +61,6 @@ impl SsrRenderer {
                 let (replaced_html, islands) = self.replace_island_placeholders(html)?;
                 rendered["html"] = Value::String(replaced_html);
                 used_islands = islands;
-            } else {
             }
         }
 
@@ -74,8 +73,7 @@ impl SsrRenderer {
             serde_json::json!({})
         };
 
-        let result = self.template.render(&rendered, &islands_json);
-        result
+        self.template.render(&rendered, &islands_json)
     }
 
     fn replace_island_placeholders(&self, html: &str) -> Result<(String, Vec<String>), String> {
@@ -107,22 +105,23 @@ impl SsrRenderer {
         processor: &P,
         path: &str,
         params: HashMap<String, String>,
-        render_fn: F
+        render_fn: F,
     ) -> Result<String, String>
     where
         P: IslandProcessor,
         F: FnOnce(&str) -> Result<String, String>,
     {
-        let context = ProcessContext { path: path.to_string() };
+        let context = ProcessContext {
+            path: path.to_string(),
+        };
         let islands_value = self.island_manager.process_islands(processor, &context);
-        
+
         let content = self.render(path, params, render_fn)?;
-        
+
         // 尝试解析 content 为 JSON，如果失败则将其作为字符串处理
-        let content_value = serde_json::from_str::<Value>(&content).unwrap_or_else(|_| {
-            json!({ "html": content })
-        });
-    
+        let content_value =
+            serde_json::from_str::<Value>(&content).unwrap_or_else(|_| json!({ "html": content }));
+
         self.template.render(&content_value, &islands_value)
     }
 }
@@ -135,6 +134,9 @@ pub fn init_ssr(
 ) {
     let config = config.cloned().unwrap_or_default();
 
+    // 初始化全局配置
+    cache::init_cache(&config);
+
     // 初始化正則表達式
     ISLAND_REGEX.get_or_init(|| {
         Regex::new(r#"<div data-island="([^"]+)"(?: data-props='([^']*)')?></div>"#).unwrap()
@@ -142,12 +144,12 @@ pub fn init_ssr(
 
     // 初始化 IslandManager
     let island_manager = island_manager_init();
-    init_island_cache(&config);
+    init_island_cache();
     ISLAND_MANAGER.get_or_init(|| Arc::new(island_manager));
 
     // 初始化 Template
     let template = template_init();
-    init_template_cache(&config);
+    init_template_cache();
     TEMPLATE.get_or_init(|| Arc::new(template));
 
     // 初始化 Renderer
@@ -158,7 +160,6 @@ pub fn init_ssr(
             TEMPLATE.get().unwrap().clone(),
         )
     });
-
 }
 
 pub fn get_renderer() -> &'static SsrRenderer {

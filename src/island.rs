@@ -1,5 +1,4 @@
-use crate::config::SsrkitConfig;
-use lru::LruCache;
+use crate::Cache;
 use nanoid::nanoid;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -7,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 pub type IslandRenderer = dyn Fn(&str, &Value) -> Result<String, String> + Send + Sync;
+
+static ISLAND_CACHE: OnceLock<Cache<String>> = OnceLock::new();
 
 pub struct Island {
     pub id: Cow<'static, str>,
@@ -16,6 +17,12 @@ pub struct Island {
 
 pub struct IslandManifest {
     islands: HashMap<Cow<'static, str>, Island>,
+}
+
+impl Default for IslandManifest {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IslandManifest {
@@ -70,39 +77,15 @@ pub trait IslandProcessor: Send + Sync {
     fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value;
 }
 
-pub struct CombinedIslandProcessor {
-    processors: Vec<Box<dyn IslandProcessor>>,
-}
-
-impl CombinedIslandProcessor {
-    pub fn new() -> Self {
-        Self {
-            processors: Vec::new(),
-        }
-    }
-
-    pub fn add<P: IslandProcessor + 'static>(mut self, processor: P) -> Self {
-        self.processors.push(Box::new(processor));
-        self
-    }
-}
-
-impl IslandProcessor for CombinedIslandProcessor {
-    fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value {
-        let mut result = serde_json::Map::new();
-        for processor in &self.processors {
-            let processed = processor.process(island_manager, context);
-            if let Value::Object(map) = processed {
-                result.extend(map);
-            }
-        }
-        Value::Object(result)
-    }
-}
-
 pub struct IslandManager {
     manifest: Arc<Mutex<IslandManifest>>,
     renderers: Arc<Mutex<HashMap<Cow<'static, str>, Box<IslandRenderer>>>>,
+}
+
+impl Default for IslandManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IslandManager {
@@ -184,29 +167,16 @@ impl Clone for IslandManager {
     }
 }
 
-static ISLAND_CACHE: OnceLock<Mutex<LruCache<String, String>>> = OnceLock::new();
-static CONFIG: OnceLock<SsrkitConfig> = OnceLock::new();
-
-pub fn init_island_cache(config: &SsrkitConfig) {
-    let _ = CONFIG.set(config.clone());
+pub fn init_island_cache() {
+    ISLAND_CACHE.get_or_init(|| Cache::new(|config| config.island_cache_size));
 }
 
 pub fn get_or_render_island<F>(key: &str, render_fn: F) -> String
 where
     F: FnOnce() -> String,
 {
-    let cache = ISLAND_CACHE.get_or_init(|| {
-        let binding = SsrkitConfig::default();
-        let config = CONFIG.get().unwrap_or(&binding);
-        Mutex::new(LruCache::new(config.island_cache_size))
-    });
-    let mut cache_guard = cache.lock().unwrap();
-    match cache_guard.get(key) {
-        Some(cached) => cached.clone(),
-        None => {
-            let rendered = render_fn();
-            cache_guard.put(key.to_string(), rendered.clone());
-            rendered
-        }
-    }
+    ISLAND_CACHE
+        .get()
+        .expect("Island cache not initialized")
+        .get_or_insert(key, render_fn)
 }

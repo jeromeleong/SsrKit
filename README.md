@@ -64,7 +64,7 @@ impl IslandProcessor for ExampleIslandProcessor {
 }
 
 fn main() {
-    // Initialize SSR components
+    // 初始化 SSR 組件
     init_ssr(
         || Box::new(CombinedParamsProcessor::new().add("/", BasicParamsProcessor)),
         || {
@@ -75,7 +75,7 @@ fn main() {
                 let instance_id = props["instanceId"].as_str().unwrap_or("");
                 Ok(format!(
                     r#"<div id="{}" data-island="Counter" data-props='{}'>
-                        <button>Increment</button>
+                        <button>遞增</button>
                         <span>{}</span>
                     </div>"#,
                     instance_id,
@@ -89,24 +89,25 @@ fn main() {
             manager
         },
         Template::new,
+        None, // 可選的 SsrkitConfig
     );
 
     let renderer = get_renderer();
 
-    // Simulate request
+    // 模擬請求
     let path = "/example";
     let mut params = HashMap::new();
     params.insert("user".to_string(), "Alice".to_string());
 
-    // Execute rendering
+    // 執行渲染
     let result = renderer.process_and_render(
         &ExampleIslandProcessor,
         path, 
         params,
         |props| {
             let parsed_props: Value = serde_json::from_str(props).unwrap();
-            let user = parsed_props["params"]["user"].as_str().unwrap_or("Guest");
-            let content = format!("Welcome, {}! Here's an interactive counter:", user);
+            let user = parsed_props["params"]["user"].as_str().unwrap_or("訪客");
+            let content = format!("歡迎，{}！這是一個互動計數器：", user);
             
             Ok(json!({
                 "html": format!(
@@ -115,14 +116,14 @@ fn main() {
                     content
                 ),
                 "css": ".counter { font-weight: bold; }",
-                "head": "<meta name='description' content='SSRKit Example with Counter'>"
+                "head": "<meta name='description' content='SSRKit 示例與計數器'>"
             }).to_string())
         }
     );
 
     match result {
-        Ok(html) => println!("Rendered HTML:\n{}", html),
-        Err(e) => println!("Rendering error: {}", e),
+        Ok(html) => println!("渲染的 HTML：\n{}", html),
+        Err(e) => println!("渲染錯誤：{}", e),
     }
 }
 ```
@@ -138,26 +139,14 @@ init_ssr(
     params_processor_init: impl FnOnce() -> Box<dyn ParamsProcessor>,
     island_manager_init: impl FnOnce() -> IslandManager,
     template_init: impl FnOnce() -> Template,
+    config: Option<&SsrkitConfig>,
 )
 ```
 
 - `params_processor_init`: 初始化參數處理器
 - `island_manager_init`: 初始化 Island 管理器
 - `template_init`: 初始化模板
-
-例如：
-
-```rust
-init_ssr(
-    || Box::new(CombinedParamsProcessor::new().add("/", BasicParamsProcessor)),
-    || {
-        let manager = IslandManager::new();
-        // 註冊 Islands...
-        manager
-    },
-    Template::new,
-);
-```
+- `config`: 可選的 SSRKit 配置
 
 ### 參數處理 (Params Processing)
 
@@ -187,7 +176,7 @@ island_manager.register("Counter", |_, props| {
     let instance_id = props["instanceId"].as_str().unwrap_or("");
     Ok(format!(
         r#"<div id="{}" data-island="Counter" data-props='{}'>
-            <button>Increment</button>
+            <button>遞增</button>
             <span>{}</span>
         </div>"#,
         instance_id,
@@ -223,9 +212,9 @@ let result = renderer.process_and_render(
     |props| {
         // 實現渲染邏輯
         Ok(json!({
-            "html": "<h1>Hello, World!</h1>",
+            "html": "<h1>你好，世界！</h1>",
             "css": ".greeting { color: blue; }",
-            "head": "<meta name='description' content='My SSR Page'>"
+            "head": "<meta name='description' content='我的 SSR 頁面'>"
         }).to_string())
     }
 );
@@ -262,9 +251,6 @@ impl IslandProcessor for IslandDemoProcessor {
         Value::Object(islands)
     }
 }
-
-let island_processor = CombinedIslandProcessor::new()
-    .add(IslandDemoProcessor);
 ```
 
 ### 與 Web 框架集成
@@ -283,8 +269,7 @@ pub async fn handle_ssr(req: &mut Request, res: &mut Response) {
         .collect();
 
     let renderer = get_renderer();
-    let island_processor = CombinedIslandProcessor::new()
-        .add(IslandDemoProcessor);
+    let island_processor = IslandDemoProcessor;
 
     let result = renderer.process_and_render(
         &island_processor,
@@ -293,9 +278,9 @@ pub async fn handle_ssr(req: &mut Request, res: &mut Response) {
         |props| {
             // 實現渲染邏輯
             Ok(json!({
-                "html": "<h1>Hello, Salvo!</h1>",
+                "html": "<h1>你好，Salvo！</h1>",
                 "css": ".greeting { color: green; }",
-                "head": "<meta name='description' content='Salvo SSR Example'>"
+                "head": "<meta name='description' content='Salvo SSR 示例'>"
             }).to_string())
         }
     );
@@ -306,7 +291,7 @@ pub async fn handle_ssr(req: &mut Request, res: &mut Response) {
         },
         Err(e) => {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Text::Plain(format!("Internal Server Error: {}", e)));
+            res.render(Text::Plain(format!("內部伺服器錯誤：{}", e)));
         }
     }
 }
@@ -314,9 +299,9 @@ pub async fn handle_ssr(req: &mut Request, res: &mut Response) {
 
 ## 前端集成
 
-ssrkit 需要前端框架的配合才能實現完整的服務器端渲染。以下是一個使用 Svelte 的示例：
+ssrkit 需要前端框架的配合才能實現完整的伺服器端渲染。以下是一個使用 Svelte 的示例：
 
-### 前端 SSR 入口點 (例如 `ssr.js`)
+### 前端 SSR 入口點（例如 `ssr.js`）
 
 ```javascript
 import App from './App.svelte';
@@ -367,7 +352,7 @@ let result = renderer.process_and_render(
     &path,
     params,
     |props| {
-        // 呼叫前端的 SSR 函數
+        // 調用前端的 SSR 函數
         let ssr_result = call_frontend_ssr(props)?;
         
         // 解析前端返回的 JSON
@@ -378,17 +363,7 @@ let result = renderer.process_and_render(
 );
 ```
 
-這裡的 `call_frontend_ssr` 函數需要根據你的專案設置來實現。它可能涉及調用 Node.js 進程或使用 WebAssembly 來執行 JavaScript 代碼。
-
-### 構建過程
-
-為了使這個流程工作，你需要：
-
-1. 將你的 Svelte 應用編譯成可以在服務器端運行的 JavaScript。
-2. 確保 `ssr.js` 文件可以被你的 Rust 後端訪問和執行。
-3. 實現一個方法來從 Rust 調用 JavaScript 的 `render` 函數。
-
-這可能需要使用工具如 Webpack 或 Rollup 來打包你的前端代碼，並使用 Node.js 集成或 WebAssembly 來在 Rust 中執行 JavaScript。
+這裡的 `call_frontend_ssr` 函數需要根據你的專案設置來實現。它可能涉及調用 Node.js 進程或使用 WebAssembly 來執行 JavaScript 程式碼。
 
 ## 效能考慮
 
@@ -398,26 +373,68 @@ ssrkit 在設計時考慮了效能：
 - **並行處理**: 雖然目前 ssrkit 不直接支持非同步渲染，但你可以在 `IslandProcessor` 的實現中使用並行處理技術來提高效能。
 - **選擇性水合**: Island 架構允許選擇性地水合頁面的特定部分，減少客戶端 JavaScript 的大小和執行時間。
 
-## 未來可能的擴展
+### 效能優化技巧
 
-- **非同步渲染支持**: 未來版本可能會考慮添加非同步處理機制，以支持更複雜的渲染場景。
-- **串流渲染**: 考慮實現串流渲染支持，以提高大型頁面的響應速度。
-- **更細粒度的快取控制**: 提供更多選項來控制和自定義快取行為。
+1. **快取策略優化**:
+   - 使用粗粒度的時間戳來增加快取命中率。
+   - 實現自定義快取鍵生成策略，排除頻繁變化的數據。
+
+2. **減少動態內容**:
+   - 將頁面分為靜態部分和動態部分，靜態部分可以長期快取。
+   - 使用客戶端 JavaScript 更新動態內容，如時間戳。
+
+3. **使用 ETags**:
+   - 實現 ETags 來允許客戶端快取頁面，只有當內容真正變化時才發送新的回應。
+
+4. **增加快取時間**:
+   - 如果內容不需要即時更新，可以增加快取的有效期。
+
+5. **批量處理**:
+   - 在 `IslandProcessor` 中實現批量處理邏
 
 ## 與 ssr-rs 的比較
 
 ssrkit 基於 ssr-rs 專案，但進行了以下改進和擴展：
 
-1. **更完善的參數處理系統**：ssrkit 提供了 `ParamsProcessor` 和 `CombinedParamsProcessor`，支持更靈活的路由特定參數處理。
-2. **Island 架構**：ssrkit 引入了 Island 架構，支持部分頁面的客戶端互動，提高了應用的互動性。
-3. **模板系統**：ssrkit 提供了更靈活的模板系統，支持自定義模板和預設模板。
-4. **Island 管理器**：ssrkit 引入了 `IslandManager`，用於管理和渲染 Island 組件。
-5. **前端框架集成**：ssrkit 提供了與前端框架（如 React、Svelte）更好的集成支持。
-6. **多執行緒支持**：ssrkit 設計上考慮了多執行緒環境，適用於高併發場景。
-7. **擴展性**：ssrkit 的模組化設計使得擴展和自定義功能更加容易。
-8. **類型安全**：ssrkit 充分利用 Rust 的類型系統，提供了更好的類型安全保證。
+1. **更完善的參數處理系統**:
+   - ssrkit 提供了 `ParamsProcessor` 和 `CombinedParamsProcessor`，支持更靈活的路由特定參數處理。
+   - 允許開發者根據不同路由實現自定義的參數處理邏輯。
 
-總的來說，ssrkit 在 ssr-rs 的基礎上，提供了更豐富的功能和更好的開發體驗，特別適合構建大型和複雜的 SSR 應用。
+2. **Island 架構**:
+   - ssrkit 引入了 Island 架構，支持部分頁面的客戶端互動，提高了應用的互動性。
+   - 允許在伺服器端渲染的頁面中嵌入可互動的客戶端組件。
+
+3. **模板系統**:
+   - ssrkit 提供了更靈活的模板系統，支持自定義模板和預設模板。
+   - 允許更細緻的控制over HTML結構、CSS和JavaScript注入。
+
+4. **Island 管理器**:
+   - ssrkit 引入了 `IslandManager`，用於管理和渲染 Island 組件。
+   - 提供了一個集中的方式來註冊、管理和渲染 Island 組件。
+
+5. **前端框架集成**:
+   - ssrkit 提供了與前端框架（如 React、Svelte）更好的集成支持。
+   - 簡化了前端和後端之間的數據傳遞和狀態管理。
+
+6. **多執行緒支持**:
+   - ssrkit 設計上考慮了多執行緒環境，適用於高併發場景。
+   - 提供了執行緒安全的數據結構和操作。
+
+7. **擴展性**:
+   - ssrkit 的模組化設計使得擴展和自定義功能更加容易。
+   - 提供了更多的鉤子（hooks）和擴展點。
+
+8. **類型安全**:
+   - ssrkit 充分利用 Rust 的類型系統，提供了更好的類型安全保證。
+   - 減少了運行時錯誤，提高了代碼的可靠性。
+
+9. **效能優化**:
+   - ssrkit 提供了更多的內建效能優化選項。
+   - 包括更細緻的快取控制和選擇性水合等特性。
+
+10. **開發者體驗**:
+    - ssrkit 提供了更豐富的文檔和示例。
+    - 設計了更直觀和易用的 API，減少了學習曲線。
 
 ## 常見問題解答
 
