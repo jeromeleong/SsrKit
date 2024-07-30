@@ -1,3 +1,5 @@
+use crate::config::SsrkitConfig;
+use lru::LruCache;
 use nanoid::nanoid;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -62,7 +64,6 @@ impl IslandManifest {
 
 pub struct ProcessContext {
     pub path: String,
-    // 可以根据需要添加更多字段
 }
 
 pub trait IslandProcessor: Send + Sync {
@@ -183,19 +184,28 @@ impl Clone for IslandManager {
     }
 }
 
-static ISLAND_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static ISLAND_CACHE: OnceLock<Mutex<LruCache<String, String>>> = OnceLock::new();
+static CONFIG: OnceLock<SsrkitConfig> = OnceLock::new();
+
+pub fn init_island_cache(config: &SsrkitConfig) {
+    let _ = CONFIG.set(config.clone());
+}
 
 pub fn get_or_render_island<F>(key: &str, render_fn: F) -> String
 where
     F: FnOnce() -> String,
 {
-    let cache = ISLAND_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache = ISLAND_CACHE.get_or_init(|| {
+        let binding = SsrkitConfig::default();
+        let config = CONFIG.get().unwrap_or(&binding);
+        Mutex::new(LruCache::new(config.island_cache_size))
+    });
     let mut cache_guard = cache.lock().unwrap();
     match cache_guard.get(key) {
         Some(cached) => cached.clone(),
         None => {
             let rendered = render_fn();
-            cache_guard.insert(key.to_string(), rendered.clone());
+            cache_guard.put(key.to_string(), rendered.clone());
             rendered
         }
     }

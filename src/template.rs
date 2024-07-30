@@ -1,15 +1,22 @@
+use crate::config::SsrkitConfig;
+use lru::LruCache;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 use std::sync::Mutex;
-use lru::LruCache;
-use std::num::NonZeroUsize;
 
 static TEMPLATE_CACHE: OnceLock<Mutex<LruCache<String, String>>> = OnceLock::new();
+static CONFIG: OnceLock<SsrkitConfig> = OnceLock::new();
+
+pub fn init_template_cache(config: &SsrkitConfig) {
+    let _ = CONFIG.set(config.clone());
+}
 
 fn get_cache() -> &'static Mutex<LruCache<String, String>> {
     TEMPLATE_CACHE.get_or_init(|| {
-        Mutex::new(LruCache::new(NonZeroUsize::new(100).unwrap()))
+        let binding = SsrkitConfig::default();
+        let config = CONFIG.get().unwrap_or(&binding);
+        Mutex::new(LruCache::new(config.template_cache_size))
     })
 }
 
@@ -23,7 +30,7 @@ impl Template {
     pub fn render(&self, content: &Value, islands: &Value) -> Result<String, String> {
         let cache_key = format!("{:?}:{:?}", content, islands);
         
-        // 嘗試從緩存中獲取
+        // Try to get from cache
         if let Some(cached_html) = get_cache().lock().unwrap().get(&cache_key) {
             return Ok(cached_html.clone());
         }
@@ -36,22 +43,22 @@ impl Template {
         let island_scripts = self.generate_island_scripts(islands);
 
         let rendered_html = if html.trim().starts_with("<!DOCTYPE html>") || html.trim().starts_with("<html>") {
-            // 如果是完整的 HTML，我們只需要插入額外的內容
+            // If it's a complete HTML, we just need to insert extra content
             let mut rendered_html = html.to_string();
 
-            // 在 </head> 之前插入額外的頭部內容
+            // Insert extra head content before </head>
             if let Some(head_end) = rendered_html.find("</head>") {
                 rendered_html.insert_str(head_end, &format!("{}<style>{}</style>{}", head_extra, css, island_scripts));
             }
 
-            // 在 <body> 之後插入額外的身體內容
+            // Insert extra body content after <body>
             if let Some(body_start) = rendered_html.find("<body>") {
                 rendered_html.insert_str(body_start + 6, body_extra);
             }
 
             rendered_html
         } else {
-            // 如果不是完整的 HTML，使用我們的模板
+            // If it's not a complete HTML, use our template
             indoc::formatdoc! {r#"
                 <!DOCTYPE html>
                 <html>
@@ -71,7 +78,7 @@ impl Template {
         let mut final_html = rendered_html;
         self.replace_island_placeholders(&mut final_html, islands);
 
-        // 將結果存入緩存
+        // Store result in cache
         get_cache().lock().unwrap().put(cache_key, final_html.clone());
 
         Ok(final_html)

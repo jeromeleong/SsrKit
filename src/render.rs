@@ -1,12 +1,12 @@
-use crate::island::{IslandManager, IslandProcessor, ProcessContext};
+use crate::island::{init_island_cache, IslandManager, IslandProcessor, ProcessContext};
 use crate::params::ParamsProcessor;
-use crate::template::Template;
+use crate::template::{init_template_cache, Template};
+use crate::SsrkitConfig;
 use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use tracing::{info, instrument};
 
 // 全局靜態變量
 static ISLAND_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -21,7 +21,6 @@ pub struct SsrRenderer {
 }
 
 impl SsrRenderer {
-    #[instrument(skip(params_processor, island_manager, template))]
     fn new(
         params_processor: Box<dyn ParamsProcessor>,
         island_manager: Arc<IslandManager>,
@@ -34,7 +33,6 @@ impl SsrRenderer {
         }
     }
 
-    #[instrument(skip(self, params, render_fn), fields(path = %path))]
     pub fn render<F>(
         &self,
         path: &str,
@@ -45,7 +43,6 @@ impl SsrRenderer {
         F: FnOnce(&str) -> Result<String, String>,
     {
         let processed_params = self.params_processor.process(path, &params);
-        info!("Params processed");
 
         let props = serde_json::json!({
             "url": path,
@@ -53,23 +50,18 @@ impl SsrRenderer {
         });
 
         let content = render_fn(&props.to_string())?;
-        info!("Render function called");
 
         let mut rendered = serde_json::from_str::<Value>(&content)
             .map_err(|e| format!("Failed to parse render result: {}", e))?;
-        info!("Render result parsed");
 
         // 條件性島嶼處理
         let mut used_islands = Vec::new();
         if let Some(html) = rendered["html"].as_str() {
             if html.contains("data-island") {
-                info!("Islands detected, starting replacement");
                 let (replaced_html, islands) = self.replace_island_placeholders(html)?;
                 rendered["html"] = Value::String(replaced_html);
                 used_islands = islands;
-                info!("Islands replaced");
             } else {
-                info!("No islands detected, skipping replacement");
             }
         }
 
@@ -83,11 +75,9 @@ impl SsrRenderer {
         };
 
         let result = self.template.render(&rendered, &islands_json);
-        info!("Template rendered");
         result
     }
 
-    #[instrument(skip(self, html))]
     fn replace_island_placeholders(&self, html: &str) -> Result<(String, Vec<String>), String> {
         let re = ISLAND_REGEX.get().expect("Regex not initialized");
         let mut result = html.to_string();
@@ -103,7 +93,6 @@ impl SsrRenderer {
             let rendered_island = self.island_manager.render_island(island_id, &props)?;
             result = result.replace(&cap[0], &rendered_island);
             used_islands.push(island_id.to_string());
-            info!("Island rendered: {}", island_id);
         }
 
         Ok((result, used_islands))
@@ -138,22 +127,28 @@ impl SsrRenderer {
     }
 }
 
-#[instrument(skip(params_processor_init, island_manager_init, template_init))]
 pub fn init_ssr(
     params_processor_init: impl FnOnce() -> Box<dyn ParamsProcessor>,
     island_manager_init: impl FnOnce() -> IslandManager,
     template_init: impl FnOnce() -> Template,
+    config: Option<&SsrkitConfig>,
 ) {
+    let config = config.cloned().unwrap_or_default();
+
     // 初始化正則表達式
     ISLAND_REGEX.get_or_init(|| {
         Regex::new(r#"<div data-island="([^"]+)"(?: data-props='([^']*)')?></div>"#).unwrap()
     });
 
     // 初始化 IslandManager
-    ISLAND_MANAGER.get_or_init(|| Arc::new(island_manager_init()));
+    let island_manager = island_manager_init();
+    init_island_cache(&config);
+    ISLAND_MANAGER.get_or_init(|| Arc::new(island_manager));
 
     // 初始化 Template
-    TEMPLATE.get_or_init(|| Arc::new(template_init()));
+    let template = template_init();
+    init_template_cache(&config);
+    TEMPLATE.get_or_init(|| Arc::new(template));
 
     // 初始化 Renderer
     RENDERER.get_or_init(|| {
@@ -164,7 +159,6 @@ pub fn init_ssr(
         )
     });
 
-    info!("SSR components initialized");
 }
 
 pub fn get_renderer() -> &'static SsrRenderer {
