@@ -2,7 +2,7 @@ use nanoid::nanoid;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub type IslandRenderer = dyn Fn(&str, &Value) -> Result<String, String> + Send + Sync;
 
@@ -179,6 +179,24 @@ impl Clone for IslandManager {
         Self {
             manifest: self.manifest.clone(),
             renderers: self.renderers.clone(),
+        }
+    }
+}
+
+static ISLAND_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+pub fn get_or_render_island<F>(key: &str, render_fn: F) -> String
+where
+    F: FnOnce() -> String,
+{
+    let cache = ISLAND_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache_guard = cache.lock().unwrap();
+    match cache_guard.get(key) {
+        Some(cached) => cached.clone(),
+        None => {
+            let rendered = render_fn();
+            cache_guard.insert(key.to_string(), rendered.clone());
+            rendered
         }
     }
 }
