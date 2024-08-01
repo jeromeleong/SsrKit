@@ -2,6 +2,12 @@
 name = "ssrkit"
 version = "0.1.0"
 edition = "2021"
+authors = ["Jerome Leong <jeromeleong1998@gmail.com>"]
+description = "SSR simplifier in Rust"
+repository = "https://github.com/jeromeleong/SsrKit"
+license = "MIT"
+keywords = ["ssr", "web"]
+categories = ["web-programming"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

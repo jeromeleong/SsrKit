@@ -1,5 +1,9 @@
 # ssrkit
 
+![Crates.io](https://img.shields.io/crates/v/ssrkit)
+[![rust-clippy analyze](https://github.com/jeromeleong/SsrKit/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/jeromeleong/SsrKit/actions/workflows/rust-clippy.yml)
+![License](https://img.shields.io/crates/l/ssrkit)
+
 `ssrkit` 是一個強大且靈活的 Rust 函式庫，專為簡化伺服器端渲染（SSR）的實作流程而設計。它基於 [ssr-rs](https://github.com/Valerioageno/ssr-rs) 項目，進一步擴展了功能和易用性。 ssrkit 提供了一套完整的工具，包括參數處理系統、Island 架構支援和模板渲染功能，可無縫整合到各種 Web 框架中。
 
 ## 特性
@@ -19,8 +23,8 @@
 
 ```toml
 [dependencies]
-ssrkit = { git = "https://github.com/jeromeleong/ssrkit.git" }
-ssr = "0.5.7" # 確保使用與 ssrkit 相容的 ssr 版本
+ssrkit = "0.1.0"
+ssr = "0.5.7" # 確保使用與 ssrkit 相容的 ssr-rs 或其他 ssr 庫
 ```
 
 注意：ssrkit 依賴 ssr-rs 和其他 SSR 相關函式庫。請確保你的專案中包含了所有必要的依賴。
