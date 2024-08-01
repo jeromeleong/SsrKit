@@ -19,7 +19,7 @@
 
 ```toml
 [dependencies]
-ssrkit = { git = "https://git.leongfamily.net/jerome/ssrkit.git" }
+ssrkit = { git = "https://github.com/jeromeleong/ssrkit.git" }
 ssr = "0.5.7" # 確保使用與 ssrkit 相容的 ssr 版本
 ```
 
@@ -62,8 +62,8 @@ impl IslandProcessor for ExampleIslandProcessor {
                     .render_island(
                         "Counter",
                         &json!({
-                                           "initialCount": 0,
-                                           "client": "load"
+                            "initialCount": 0,
+                            "client": "load"
                         }),
                     )
                     .unwrap_or_default()
@@ -94,9 +94,9 @@ fn main() {
                 let instance_id = props["instanceId"].as_str().unwrap_or("");
                 Ok(format!(
                     r#"<div id="{}" data-island="Counter" data-props='{}'>
- <button>遞增</button>
- <span>{}</span>
- </div>"#,
+                        <button>遞增</button>
+                        <span>{}</span>
+                    </div>"#,
                     instance_id,
                     serde_json::to_string(props).unwrap(),
                     initial_count
@@ -133,8 +133,8 @@ fn main() {
         Ok(json!({
         "html": format!(
         r#"<h1>{}</h1>
- <div data-island="Counter" data-name="counter" data-props='{{"initialCount": 0}}'></div>
- {}"#,
+            <div data-island="Counter" data-name="counter" data-props='{{"initialCount": 0}}'></div>
+        {}"#,
         content,
         rendered
         ),
@@ -497,11 +497,11 @@ ssrkit 基於 ssr-rs 項目，並對其進行了擴展。以下是 ssrkit 與 ss
 
 ## 許可
 
-ssrkit 暫無許可證。
+ssrkit 使用 MIT 許可證。
 
 ## 致謝
 
-特別感謝 ssr-rs 專案的開發者，他們的工作為 ssrkit 奠定了基礎。同時也感謝所有為 ssrkit 做出貢獻的開發者。
+特別感謝 ssr-rs 專案的開發者，他的工作為 ssrkit 奠定了基礎。
 
 ## 相關項目
 
@@ -517,7 +517,7 @@ ssrkit 暫無許可證。
 
 如果你有任何問題或建議，可以透過以下方式聯絡我：
 
-- GitHub Issues: [ssrkit issues](https://git.leongfamily.net/jerome/ssrkit/-/issues)
+- GitHub Issues: [ssrkit issues](https://github.com/jeromeleong/ssrkit/issues)
 - Email: jeromeleong1998@gmail.com
 
 感謝你使用 ssrkit！我們期待看到你用它構建的出色應用。
