@@ -1,14 +1,16 @@
 use crate::island::{init_island_cache, IslandManager, IslandProcessor, ProcessContext};
 use crate::params::ParamsProcessor;
 use crate::template::{init_template_cache, Template};
-use crate::{cache, SsrkitConfig};
+use crate::state::{init_global_state, get_global_state};
+use crate::config::{get_global_config, SsrkitConfig};
+use crate::Cache;
 use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-// 全局靜態變量
+// Global static variables
 static ISLAND_REGEX: OnceLock<Regex> = OnceLock::new();
 static RENDERER: OnceLock<SsrRenderer> = OnceLock::new();
 static ISLAND_MANAGER: OnceLock<Arc<IslandManager>> = OnceLock::new();
@@ -38,7 +40,7 @@ impl SsrRenderer {
         path: &str,
         params: HashMap<String, String>,
         render_fn: F,
-    ) -> Result<String, String>
+    ) -> Result<(String, Vec<String>), String>
     where
         F: FnOnce(&str) -> Result<String, String>,
     {
@@ -54,7 +56,7 @@ impl SsrRenderer {
         let mut rendered = serde_json::from_str::<Value>(&content)
             .map_err(|e| format!("Failed to parse render result: {}", e))?;
 
-        // 條件性島嶼處理
+        // Conditional island processing
         let mut used_islands = Vec::new();
         if let Some(html) = rendered["html"].as_str() {
             if html.contains("data-island") {
@@ -64,7 +66,7 @@ impl SsrRenderer {
             }
         }
 
-        // 創建 islands 對象
+        // Create islands object
         let islands_json = if !used_islands.is_empty() {
             serde_json::json!({
                 "islands": used_islands.into_iter().map(|id| (id, Value::Null)).collect::<serde_json::Map<String, Value>>()
@@ -73,7 +75,13 @@ impl SsrRenderer {
             serde_json::json!({})
         };
 
-        self.template.render(&rendered, &islands_json)
+        let global_state = get_global_state().read().map_err(|e| e.to_string())?;
+        let cookie_manager = global_state.get_cookie_manager().lock().map_err(|e| e.to_string())?;
+        let cookies = cookie_manager.to_header_strings();
+
+        let html = self.template.render(&rendered, &islands_json)?;
+
+        Ok((html, cookies))
     }
 
     fn replace_island_placeholders(&self, html: &str) -> Result<(String, Vec<String>), String> {
@@ -106,7 +114,7 @@ impl SsrRenderer {
         path: &str,
         params: HashMap<String, String>,
         render_fn: F,
-    ) -> Result<String, String>
+    ) -> Result<(String, Vec<String>), String>
     where
         P: IslandProcessor,
         F: FnOnce(&str) -> Result<String, String>,
@@ -116,13 +124,14 @@ impl SsrRenderer {
         };
         let islands_value = self.island_manager.process_islands(processor, &context);
 
-        let content = self.render(path, params, render_fn)?;
+        let (content, cookies) = self.render(path, params, render_fn)?;
 
-        // 尝试解析 content 为 JSON，如果失败则将其作为字符串处理
         let content_value =
             serde_json::from_str::<Value>(&content).unwrap_or_else(|_| json!({ "html": content }));
 
-        self.template.render(&content_value, &islands_value)
+        let html = self.template.render(&content_value, &islands_value)?;
+
+        Ok((html, cookies))
     }
 }
 
@@ -132,27 +141,32 @@ pub fn init_ssr(
     template_init: impl FnOnce() -> Template,
     config: Option<&SsrkitConfig>,
 ) {
-    let config = config.cloned().unwrap_or_default();
+    let config = config.cloned().unwrap_or_else(|| get_global_config().clone());
 
-    // 初始化全局配置
-    cache::init_cache(&config);
+    // Initialize global config
+    crate::cache::init_cache(&config);
 
-    // 初始化正則表達式
+    // Initialize GlobalState
+    let cache = Cache::new(|config| config.get_global_state_cache_size());
+    let session_duration = config.get_global_state_session_duration();
+    init_global_state(cache, config.clone(), session_duration);
+
+    // Initialize regex
     ISLAND_REGEX.get_or_init(|| {
         Regex::new(r#"<div data-island="([^"]+)"(?: data-props='([^']*)')?></div>"#).unwrap()
     });
 
-    // 初始化 IslandManager
+    // Initialize IslandManager
     let island_manager = island_manager_init();
     init_island_cache();
     ISLAND_MANAGER.get_or_init(|| Arc::new(island_manager));
 
-    // 初始化 Template
+    // Initialize Template
     let template = template_init();
     init_template_cache();
     TEMPLATE.get_or_init(|| Arc::new(template));
 
-    // 初始化 Renderer
+    // Initialize Renderer
     RENDERER.get_or_init(|| {
         SsrRenderer::new(
             params_processor_init(),

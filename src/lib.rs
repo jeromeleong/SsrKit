@@ -3,6 +3,7 @@ pub mod config;
 pub mod island;
 pub mod params;
 pub mod render;
+pub mod state;
 pub mod template;
 
 // Re-export main types and traits

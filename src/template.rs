@@ -118,7 +118,7 @@ impl Template {
 }
 
 pub fn init_template_cache() {
-    TEMPLATE_CACHE.get_or_init(|| Cache::new(|config| config.template_cache_size));
+    TEMPLATE_CACHE.get_or_init(|| Cache::new(|config| config.get_template_cache_size()));
 }
 
 pub fn render_template<F>(key: &str, render_fn: F) -> String

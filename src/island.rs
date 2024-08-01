@@ -1,4 +1,5 @@
-use crate::Cache;
+use crate::config::get_global_config;
+use crate::{Cache, SsrkitConfig};
 use nanoid::nanoid;
 use serde_json::Value;
 use std::borrow::Cow;
@@ -80,6 +81,7 @@ pub trait IslandProcessor: Send + Sync {
 pub struct IslandManager {
     manifest: Arc<Mutex<IslandManifest>>,
     renderers: Arc<Mutex<HashMap<Cow<'static, str>, Box<IslandRenderer>>>>,
+    config: Arc<SsrkitConfig>,
 }
 
 impl Default for IslandManager {
@@ -90,9 +92,11 @@ impl Default for IslandManager {
 
 impl IslandManager {
     pub fn new() -> Self {
+        let config = get_global_config().clone();
         Self {
             manifest: Arc::new(Mutex::new(IslandManifest::new())),
             renderers: Arc::new(Mutex::new(HashMap::new())),
+            config: config.into(),
         }
     }
 
@@ -123,7 +127,9 @@ impl IslandManager {
         let renderer = renderers
             .get(id)
             .ok_or_else(|| format!("Renderer for island '{}' not found", id))?;
-        let instance_id = nanoid!(10);
+        let length = self.config.get_nanoid_length();
+        let alphabet = self.config.get_nanoid_alphabet();
+        let instance_id = nanoid!(length, &alphabet);
         let mut merged_props = serde_json::json!({
             "islandId": id,
             "version": island.version,
@@ -163,12 +169,13 @@ impl Clone for IslandManager {
         Self {
             manifest: self.manifest.clone(),
             renderers: self.renderers.clone(),
+            config: self.config.clone(),
         }
     }
 }
 
 pub fn init_island_cache() {
-    ISLAND_CACHE.get_or_init(|| Cache::new(|config| config.island_cache_size));
+    ISLAND_CACHE.get_or_init(|| Cache::new(|config| config.get_island_cache_size()));
 }
 
 pub fn get_or_render_island<F>(key: &str, render_fn: F) -> String
