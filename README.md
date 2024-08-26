@@ -1,8 +1,10 @@
 # ssrkit
 
 ![Crates.io](https://img.shields.io/crates/v/ssrkit)
-[![rust-clippy analyze](https://github.com/jeromeleong/SsrKit/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/jeromeleong/SsrKit/actions/workflows/rust-clippy.yml)
 ![License](https://img.shields.io/crates/l/ssrkit)
+
+    `ssrkit`庫正在修改和完善islands功能中，暫時不要使用`features = ["island"]`
+    避免後續的大改動。
 
 `ssrkit` 是一個強大且靈活的 Rust 函式庫，專為簡化伺服器端渲染（SSR）的實作流程而設計。它基於 [ssr-rs](https://github.com/Valerioageno/ssr-rs) 項目，進一步擴展了功能和易用性。 ssrkit 提供了一套完整的工具，包括參數處理系統、Island 架構支援和模板渲染功能，可無縫整合到各種 Web 框架中。
 
@@ -23,8 +25,8 @@
 
 ```toml
 [dependencies]
-ssrkit = "0.1.0"
-ssr = "0.5.7" # 確保使用與 ssrkit 相容的 ssr-rs 或其他 ssr 庫
+ssrkit = { version = "0.1.1" , features = ["island"] }
+ssr = "0.5.8" # 確保使用與 ssrkit 相容的 ssr-rs 或其他 ssr 庫
 ```
 
 注意：ssrkit 依賴 ssr-rs 和其他 SSR 相關函式庫。請確保你的專案中包含了所有必要的依賴。
@@ -40,20 +42,15 @@ use ssrkit::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-struct BasicParamsProcessor;
-impl ParamsProcessor for BasicParamsProcessor {
-    fn process(
-        &self,
-        _path: &str,
-        params: &HashMap<String, String>,
-    ) -> serde_json::Map<String, Value> {
-        params
-            .iter()
-            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
-            .collect()
-    }
+#[params_handle]
+fn BasicParamsProcessor(&self, path: &str, params: &HashMap<String, String>) -> Map<String, Value> {
+    params
+        .iter()
+        .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+        .collect()
 }
 
+// island 功能，需要使用了 island feature
 struct ExampleIslandProcessor;
 impl IslandProcessor for ExampleIslandProcessor {
     fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value {
@@ -90,6 +87,9 @@ fn main() {
     // 初始化 SSR 元件
     init_ssr(
         || Box::new(CombinedParamsProcessor::new().add("/", BasicParamsProcessor)),
+        Template::new,
+        None, // 可選的 SsrkitConfig
+        // 當使用了 island feature 才需要填寫
         || {
             let manager = IslandManager::new();
 
@@ -113,8 +113,6 @@ fn main() {
 
             manager
         },
-        Template::new,
-        None, // 可選的 SsrkitConfig
     );
 
     let renderer = get_renderer();
@@ -164,21 +162,40 @@ fn main() {
 ```rust
 init_ssr(
     params_processor_init: impl FnOnce() -> Box<dyn ParamsProcessor>,
-    island_manager_init: impl FnOnce() -> IslandManager,
     template_init: impl FnOnce() -> Template,
     config: Option<&SsrkitConfig>,
+    island_manager_init: impl FnOnce() -> IslandManager,
 )
 ```
-
+沒有使用了 `island` feature 的話，只需要3個變量
 - `params_processor_init`: 初始化參數處理器
-- `island_manager_init`: 初始化 Island 管理器
 - `template_init`: 初始化模板
 - `config`: 可選的 SSRKit 配置
 
+- `island_manager_init`: 初始化 Island 管理器
+
 ### 參數處理 (Params Processing)
 
-參數處理允許你根據路由和請求參數自訂邏輯：
+參數處理允許你根據路由和請求參數自訂邏輯
 
+SsrKit 提供了簡單方便的過程宏 - `#[params_handle]` 供用戶使用：
+```rust
+#[params_handle]
+fn UserParamsProcessor(
+    &self,
+    _path: &str,
+    params: &HashMap<String, String>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut processed = serde_json::Map::new();
+    if let Some(user_id) = params.get("id") {
+        processed.insert("user_id".to_string(), user_id.clone().into());
+        processed.insert("is_admin".to_string(), (user_id == "admin").into());
+    }
+    processed
+}
+```
+
+沒有使用過程宏的例子：
 ```rust
 struct UserParamsProcessor;
 impl ParamsProcessor for UserParamsProcessor {

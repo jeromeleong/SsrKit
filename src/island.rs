@@ -1,31 +1,44 @@
+#[cfg(feature = "island")]
 use crate::config::get_global_config;
+#[cfg(feature = "island")]
 use crate::{Cache, SsrkitConfig};
+#[cfg(feature = "island")]
 use nanoid::nanoid;
+#[cfg(feature = "island")]
 use serde_json::Value;
+#[cfg(feature = "island")]
 use std::borrow::Cow;
+#[cfg(feature = "island")]
 use std::collections::HashMap;
+#[cfg(feature = "island")]
 use std::sync::{Arc, Mutex, OnceLock};
 
+#[cfg(feature = "island")]
 pub type IslandRenderer = dyn Fn(&str, &Value) -> Result<String, String> + Send + Sync;
 
+#[cfg(feature = "island")]
 static ISLAND_CACHE: OnceLock<Cache<String>> = OnceLock::new();
 
+#[cfg(feature = "island")]
 pub struct Island {
     pub id: Cow<'static, str>,
     pub version: u64,
     pub meta: Option<Value>,
 }
 
+#[cfg(feature = "island")]
 pub struct IslandManifest {
     islands: HashMap<Cow<'static, str>, Island>,
 }
 
+#[cfg(feature = "island")]
 impl Default for IslandManifest {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "island")]
 impl IslandManifest {
     pub fn new() -> Self {
         Self {
@@ -70,26 +83,31 @@ impl IslandManifest {
     }
 }
 
+#[cfg(feature = "island")]
 pub struct ProcessContext {
     pub path: String,
 }
 
+#[cfg(feature = "island")]
 pub trait IslandProcessor: Send + Sync {
     fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value;
 }
 
+#[cfg(feature = "island")]
 pub struct IslandManager {
     manifest: Arc<Mutex<IslandManifest>>,
     renderers: Arc<Mutex<HashMap<Cow<'static, str>, Box<IslandRenderer>>>>,
     config: Arc<SsrkitConfig>,
 }
 
+#[cfg(feature = "island")]
 impl Default for IslandManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "island")]
 impl IslandManager {
     pub fn new() -> Self {
         let config = get_global_config().clone();
@@ -164,6 +182,7 @@ impl IslandManager {
     }
 }
 
+#[cfg(feature = "island")]
 impl Clone for IslandManager {
     fn clone(&self) -> Self {
         Self {
@@ -174,10 +193,12 @@ impl Clone for IslandManager {
     }
 }
 
+#[cfg(feature = "island")]
 pub fn init_island_cache() {
     ISLAND_CACHE.get_or_init(|| Cache::new(|config| config.get_island_cache_size()));
 }
 
+#[cfg(feature = "island")]
 pub fn get_or_render_island<F>(key: &str, render_fn: F) -> String
 where
     F: FnOnce() -> String,

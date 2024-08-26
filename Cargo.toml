@@ -1,6 +1,6 @@
 [package]
 name = "ssrkit"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Jerome Leong <jeromeleong1998@gmail.com>"]
 description = "SSR simplifier in Rust"
@@ -8,6 +8,10 @@ repository = "https://github.com/jeromeleong/SsrKit"
 license = "MIT"
 keywords = ["ssr", "web"]
 categories = ["web-programming"]
+
+[features]
+default = []
+island = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -17,3 +21,5 @@ regex = "1.10.5"
 nanoid = "0.4.0"
 indoc = "2.0.5"
 lru = "0.12.4"
+
+ssrkit-macros = { path = "ssrkit-macros" }
