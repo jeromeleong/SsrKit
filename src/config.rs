@@ -145,7 +145,7 @@ impl SsrkitConfigBuilder {
         self
     }
 
-    pub fn build(self) -> SsrkitConfig {
+    pub fn finish(self) -> SsrkitConfig {
         SsrkitConfig {
             nanoid_length: self.nanoid_length,
             nanoid_alphabet: self.nanoid_alphabet,
