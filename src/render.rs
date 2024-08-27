@@ -45,51 +45,46 @@ impl SsrRenderer {
         path: &str,
         params: HashMap<String, String>,
         render_fn: F,
+        #[cfg(feature = "island")] processor: &dyn IslandProcessor,
     ) -> Result<(String, Vec<String>), String>
     where
         F: FnOnce(&str) -> Result<String, String>,
     {
         let processed_params = self.params_processor.process(path, &params);
-
+    
         let props = json!({
             "url": path,
             "params": processed_params,
         });
-
+    
         let content = render_fn(&props.to_string())?;
-
+    
         #[cfg(feature = "island")]
         {
             let mut rendered = serde_json::from_str::<Value>(&content)
                 .map_err(|e| format!("Failed to parse render result: {}", e))?;
             // Conditional island processing
-            let mut used_islands = Vec::new();
             if let Some(html) = rendered["html"].as_str() {
                 if html.contains("data-island") {
-                    let (replaced_html, islands) = self.replace_island_placeholders(html)?;
+                    let replaced_html = self.replace_island_placeholders(html)?;
                     rendered["html"] = Value::String(replaced_html);
-                    used_islands = islands;
                 }
             }
-
-            // Create islands object
-            let islands_json = if !used_islands.is_empty() {
-                serde_json::json!({
-                    "islands": used_islands.into_iter().map(|id| (id, Value::Null)).collect::<serde_json::Map<String, Value>>()
-                })
-            } else {
-                serde_json::json!({})
+    
+            let context = ProcessContext {
+                path: path.to_string(),
             };
-
+            let islands_value = self.island_manager.process_islands(processor, &context);
+    
             let global_state = get_global_state().read().map_err(|e| e.to_string())?;
             let cookie_manager = global_state
                 .get_cookie_manager()
                 .lock()
                 .map_err(|e| e.to_string())?;
             let cookies = cookie_manager.to_header_strings();
-
-            let html = self.template.render(&rendered, &islands_json)?;
-
+    
+            let html = self.template.render(&rendered, Some(&islands_value))?;
+    
             Ok((html, cookies))
         }
         #[cfg(not(feature = "island"))]
@@ -102,18 +97,17 @@ impl SsrRenderer {
                 .lock()
                 .map_err(|e| e.to_string())?;
             let cookies = cookie_manager.to_header_strings();
-
+    
             let html = self.template.render(&rendered)?;
-
+    
             Ok((html, cookies))
         }
     }
 
     #[cfg(feature = "island")]
-    fn replace_island_placeholders(&self, html: &str) -> Result<(String, Vec<String>), String> {
+    fn replace_island_placeholders(&self, html: &str) -> Result<String, String> {
         let re = ISLAND_REGEX.get().expect("Regex not initialized");
         let mut result = html.to_string();
-        let mut used_islands = Vec::new();
 
         for cap in re.captures_iter(html) {
             let island_id = &cap[1];
@@ -124,43 +118,15 @@ impl SsrRenderer {
 
             let rendered_island = self.island_manager.render_island(island_id, &props)?;
             result = result.replace(&cap[0], &rendered_island);
-            used_islands.push(island_id.to_string());
         }
 
-        Ok((result, used_islands))
+        Ok(result)
     }
 
     #[cfg(feature = "island")]
     pub fn get_island_manager(&self) -> &Arc<IslandManager> {
         &self.island_manager
-    }
-
-    #[cfg(feature = "island")]
-    pub fn process_and_render<P, F>(
-        &self,
-        processor: &P,
-        path: &str,
-        params: HashMap<String, String>,
-        render_fn: F,
-    ) -> Result<(String, Vec<String>), String>
-    where
-        P: IslandProcessor,
-        F: FnOnce(&str) -> Result<String, String>,
-    {
-        let context = ProcessContext {
-            path: path.to_string(),
-        };
-        let islands_value = self.island_manager.process_islands(processor, &context);
-
-        let (content, cookies) = self.render(path, params, render_fn)?;
-
-        let content_value =
-            serde_json::from_str::<Value>(&content).unwrap_or_else(|_| json!({ "html": content }));
-
-        let html = self.template.render(&content_value, &islands_value)?;
-
-        Ok((html, cookies))
-    }
+    }    
 }
 
 pub fn init_ssr(

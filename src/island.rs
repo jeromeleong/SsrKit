@@ -152,6 +152,40 @@ pub trait IslandProcessor: Send + Sync {
     fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value;
 }
 
+pub struct CombinedIslandProcessor {
+    processors: Vec<Box<dyn IslandProcessor>>,
+}
+
+impl CombinedIslandProcessor {
+    pub fn new() -> Self {
+        Self {
+            processors: Vec::new(),
+        }
+    }
+
+    pub fn add<P: IslandProcessor + 'static>(mut self, processor: P) -> Self {
+        self.processors.push(Box::new(processor));
+        self
+    }
+}
+
+impl IslandProcessor for CombinedIslandProcessor {
+    fn process(&self, island_manager: &Arc<IslandManager>, context: &ProcessContext) -> Value {
+        let mut result = serde_json::Map::new();
+
+        for processor in &self.processors {
+            let processed_value = processor.process(island_manager, context);
+            if let Some(obj) = processed_value.as_object() {
+                for (key, value) in obj {
+                    result.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        Value::Object(result)
+    }
+}
+
 pub struct IslandRegistration<'a> {
     manager: &'a IslandManager,
 }

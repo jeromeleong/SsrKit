@@ -20,9 +20,15 @@ impl Template {
         Self
     }
 
-    #[cfg(feature = "island")]
-    pub fn render(&self, content: &Value, islands: &Value) -> Result<String, String> {
+    pub fn render(
+        &self,
+        content: &Value,
+        #[cfg(feature = "island")] islands: Option<&Value>,
+    ) -> Result<String, String> {
+        #[cfg(feature = "island")]
         let cache_key = format!("{:?}:{:?}", content, islands);
+        #[cfg(not(feature = "island"))]
+        let cache_key = format!("{:?}", content);
 
         // Try to get from cache
         if let Some(cached_html) = TEMPLATE_CACHE.get().unwrap().get(&cache_key) {
@@ -36,9 +42,16 @@ impl Template {
         let head_extra = content["head"].as_str().unwrap_or("");
         let body_extra = content["body"].as_str().unwrap_or("");
 
-        let island_scripts = self.generate_island_scripts(islands);
+        #[cfg(feature = "island")]
+        let island_scripts = islands
+            .map(|islands| self.generate_island_scripts(islands))
+            .unwrap_or_default();
 
-        let rendered_html =
+        #[cfg(not(feature = "island"))]
+        let island_scripts = String::new();
+
+        #[cfg(feature = "island")]
+        let mut rendered_html =
             if html.trim().starts_with("<!DOCTYPE html>") || html.trim().starts_with("<html>") {
                 // If it's a complete HTML, we just need to insert extra content
                 let mut rendered_html = html.to_string();
@@ -75,50 +88,22 @@ impl Template {
             "#}
             };
 
-        let mut final_html = rendered_html;
-        self.replace_island_placeholders(&mut final_html, islands);
-
-        // Store result in cache
-        TEMPLATE_CACHE
-            .get()
-            .unwrap()
-            .insert(&cache_key, final_html.clone());
-
-        Ok(final_html)
-    }
-
-    #[cfg(not(feature = "island"))]
-    pub fn render(&self, content: &Value) -> Result<String, String> {
-        let cache_key = format!("{:?}", content);
-
-        // Try to get from cache
-        if let Some(cached_html) = TEMPLATE_CACHE.get().unwrap().get(&cache_key) {
-            return Ok(cached_html);
-        }
-
-        let html = content["html"]
-            .as_str()
-            .ok_or("Missing 'html' in content")?;
-        let css = content["css"].as_str().unwrap_or("");
-        let head_extra = content["head"].as_str().unwrap_or("");
-        let body_extra = content["body"].as_str().unwrap_or("");
-
+        #[cfg(not(feature = "island"))]
         let rendered_html =
             if html.trim().starts_with("<!DOCTYPE html>") || html.trim().starts_with("<html>") {
                 // If it's a complete HTML, we just need to insert extra content
                 let mut rendered_html = html.to_string();
-
                 // Insert extra head content before </head>
                 if let Some(head_end) = rendered_html.find("</head>") {
-                    rendered_html
-                        .insert_str(head_end, &format!("{}<style>{}</style>", head_extra, css));
+                    rendered_html.insert_str(
+                        head_end,
+                        &format!("{}<style>{}</style>{}", head_extra, css, island_scripts),
+                    );
                 }
-
                 // Insert extra body content after <body>
                 if let Some(body_start) = rendered_html.find("<body>") {
                     rendered_html.insert_str(body_start + 6, body_extra);
                 }
-
                 rendered_html
             } else {
                 // If it's not a complete HTML, use our template
@@ -128,6 +113,7 @@ impl Template {
                 <head>
                     {head_extra}
                     <style>{css}</style>
+                    {island_scripts}
                 </head>
                 <body>
                     {body_extra}
@@ -136,6 +122,10 @@ impl Template {
                 </html>
             "#}
             };
+        #[cfg(feature = "island")]
+        if let Some(islands) = islands {
+            self.replace_island_placeholders(&mut rendered_html, islands);
+        }
 
         // Store result in cache
         TEMPLATE_CACHE
