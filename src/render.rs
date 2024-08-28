@@ -1,23 +1,15 @@
-use crate::config::{get_global_config, SsrkitConfig};
+use crate::init::RENDERER;
 use crate::params::ParamsProcessor;
-use crate::state::{get_global_state, init_global_state};
-use crate::template::{init_template_cache, Template};
-use crate::Cache;
-use regex::Regex;
+use crate::state::get_global_state;
+use crate::template::Template;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::OnceLock;
 
 #[cfg(feature = "island")]
-use crate::island::{init_island_cache, IslandManager, IslandProcessor, ProcessContext};
-
-// Global static variables
-static ISLAND_REGEX: OnceLock<Regex> = OnceLock::new();
-static RENDERER: OnceLock<SsrRenderer> = OnceLock::new();
+use crate::init::ISLAND_REGEX;
 #[cfg(feature = "island")]
-static ISLAND_MANAGER: OnceLock<Arc<IslandManager>> = OnceLock::new();
-static TEMPLATE: OnceLock<Arc<Template>> = OnceLock::new();
+use crate::island::{IslandManager, IslandProcessor, ProcessContext};
 
 pub struct SsrRenderer {
     params_processor: Box<dyn ParamsProcessor>,
@@ -27,7 +19,7 @@ pub struct SsrRenderer {
 }
 
 impl SsrRenderer {
-    fn new(
+    pub fn new(
         params_processor: Box<dyn ParamsProcessor>,
         #[cfg(feature = "island")] island_manager: Arc<IslandManager>,
         template: Arc<Template>,
@@ -51,14 +43,14 @@ impl SsrRenderer {
         F: FnOnce(&str) -> Result<String, String>,
     {
         let processed_params = self.params_processor.process(path, &params);
-    
+
         let props = json!({
             "url": path,
             "params": processed_params,
         });
-    
+
         let content = render_fn(&props.to_string())?;
-    
+
         #[cfg(feature = "island")]
         {
             let mut rendered = serde_json::from_str::<Value>(&content)
@@ -70,21 +62,21 @@ impl SsrRenderer {
                     rendered["html"] = Value::String(replaced_html);
                 }
             }
-    
+
             let context = ProcessContext {
                 path: path.to_string(),
             };
             let islands_value = self.island_manager.process_islands(processor, &context);
-    
+
             let global_state = get_global_state().read().map_err(|e| e.to_string())?;
             let cookie_manager = global_state
                 .get_cookie_manager()
                 .lock()
                 .map_err(|e| e.to_string())?;
             let cookies = cookie_manager.to_header_strings();
-    
+
             let html = self.template.render(&rendered, Some(&islands_value))?;
-    
+
             Ok((html, cookies))
         }
         #[cfg(not(feature = "island"))]
@@ -97,9 +89,9 @@ impl SsrRenderer {
                 .lock()
                 .map_err(|e| e.to_string())?;
             let cookies = cookie_manager.to_header_strings();
-    
+
             let html = self.template.render(&rendered)?;
-    
+
             Ok((html, cookies))
         }
     }
@@ -126,54 +118,7 @@ impl SsrRenderer {
     #[cfg(feature = "island")]
     pub fn get_island_manager(&self) -> &Arc<IslandManager> {
         &self.island_manager
-    }    
-}
-
-pub fn init_ssr(
-    params_processor_init: impl FnOnce() -> Box<dyn ParamsProcessor>,
-    template_init: impl FnOnce() -> Template,
-    config: Option<&SsrkitConfig>,
-    #[cfg(feature = "island")] island_manager_init: impl FnOnce() -> IslandManager,
-) {
-    let config = config
-        .cloned()
-        .unwrap_or_else(|| get_global_config().clone());
-
-    // Initialize global config
-    crate::cache::init_cache(&config);
-
-    // Initialize GlobalState
-    let cache = Cache::new(|config| config.get_global_state_cache_size());
-    let session_duration = config.get_global_state_session_duration();
-    init_global_state(cache, config.clone(), session_duration);
-
-    // Initialize regex
-    ISLAND_REGEX.get_or_init(|| {
-        Regex::new(r#"<div data-island="([^"]+)"(?: data-props='([^']*)')?></div>"#).unwrap()
-    });
-
-    #[cfg(feature = "island")]
-    {
-        // Initialize IslandManager
-        let island_manager = island_manager_init();
-        init_island_cache();
-        ISLAND_MANAGER.get_or_init(|| Arc::new(island_manager));
     }
-
-    // Initialize Template
-    let template = template_init();
-    init_template_cache();
-    TEMPLATE.get_or_init(|| Arc::new(template));
-
-    // Initialize Renderer
-    RENDERER.get_or_init(|| {
-        SsrRenderer::new(
-            params_processor_init(),
-            #[cfg(feature = "island")]
-            ISLAND_MANAGER.get().unwrap().clone(),
-            TEMPLATE.get().unwrap().clone(),
-        )
-    });
 }
 
 pub fn get_renderer() -> &'static SsrRenderer {

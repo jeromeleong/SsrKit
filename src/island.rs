@@ -6,7 +6,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-pub type IslandRenderer = dyn Fn(&str, &Value) -> Result<String, String> + Send + Sync;
+pub type IslandRenderer =
+    dyn for<'a> Fn(&'a str, &'a Value) -> Result<String, String> + Send + Sync;
 
 static ISLAND_CACHE: OnceLock<Cache<String>> = OnceLock::new();
 
@@ -18,7 +19,7 @@ pub struct Island {
 
 pub struct IslandManager {
     islands: Arc<Mutex<HashMap<Cow<'static, str>, Island>>>,
-    renderers: Arc<Mutex<HashMap<Cow<'static, str>, Box<IslandRenderer>>>>,
+    renderers: Arc<Mutex<HashMap<Cow<'static, str>, Arc<IslandRenderer>>>>,
     config: Arc<SsrkitConfig>,
 }
 
@@ -34,7 +35,7 @@ impl IslandManager {
         Self {
             islands: Arc::new(Mutex::new(HashMap::new())),
             renderers: Arc::new(Mutex::new(HashMap::new())),
-            config: config.into(),
+            config: Arc::new(config),
         }
     }
 
@@ -163,9 +164,16 @@ impl CombinedIslandProcessor {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn add<P: IslandProcessor + 'static>(mut self, processor: P) -> Self {
         self.processors.push(Box::new(processor));
         self
+    }
+}
+
+impl Default for CombinedIslandProcessor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -201,23 +209,26 @@ impl<'a> IslandRegistration<'a> {
             .renderers
             .lock()
             .unwrap()
-            .insert(id.clone(), Box::new(default_renderer));
+            .insert(id.clone(), Arc::new(default_renderer));
         let _ = self.manager.add_island(id, None);
         self
     }
 
-    pub fn add(
+    pub fn add<F>(
         self,
         id: impl Into<Cow<'static, str>>,
-        renderer: Box<IslandRenderer>,
+        renderer: F,
         default_props: Option<Value>,
-    ) -> Self {
+    ) -> Self
+    where
+        F: for<'b> Fn(&'b str, &'b Value) -> Result<String, String> + Send + Sync + 'static,
+    {
         let id = id.into();
         self.manager
             .renderers
             .lock()
             .unwrap()
-            .insert(id.clone(), renderer);
+            .insert(id.clone(), Arc::new(renderer));
         let _ = self.manager.add_island(id, default_props);
         self
     }

@@ -17,8 +17,8 @@ impl SsrkitConfig {
         Self::default()
     }
 
-    pub fn builder() -> SsrkitConfigBuilder {
-        SsrkitConfigBuilder::new()
+    pub fn change() -> SsrkitConfigChanger {
+        SsrkitConfigChanger::new()
     }
 
     pub fn get_nanoid_length(&self) -> usize {
@@ -91,7 +91,7 @@ impl Clone for SsrkitConfig {
     }
 }
 
-pub struct SsrkitConfigBuilder {
+pub struct SsrkitConfigChanger {
     nanoid_length: Option<usize>,
     nanoid_alphabet: Option<Vec<char>>,
     global_state_session_duration: Option<Duration>,
@@ -101,7 +101,7 @@ pub struct SsrkitConfigBuilder {
     island_cache_size: Option<NonZeroUsize>,
 }
 
-impl SsrkitConfigBuilder {
+impl SsrkitConfigChanger {
     pub fn new() -> Self {
         Self {
             nanoid_length: None,
@@ -158,7 +158,7 @@ impl SsrkitConfigBuilder {
     }
 }
 
-impl Default for SsrkitConfigBuilder {
+impl Default for SsrkitConfigChanger {
     fn default() -> Self {
         Self::new()
     }

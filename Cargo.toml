@@ -1,6 +1,6 @@
 [package]
 name = "ssrkit"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Jerome Leong <jeromeleong1998@gmail.com>"]
 description = "SSR simplifier in Rust"
@@ -22,4 +22,4 @@ nanoid = "0.4.0"
 indoc = "2.0.5"
 lru = "0.12.4"
 
-ssrkit-macros = { version = "0.1.0", path = "../ssrkit-macros" }
+ssrkit-macros = { version = "0.1.1" }
